@@ -16,9 +16,10 @@ router.post(
   '/join',
   roomController.joinRoom
 )
+
 // GET ALL ROOMS
 router.get(
-    '/allRooms',
+    '/user/:userId',
     roomController.getAllRooms
 )
 // GET ROOM BY ID

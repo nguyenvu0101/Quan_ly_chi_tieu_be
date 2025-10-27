@@ -13,16 +13,53 @@ let refreshTokens = []
 
 const roomController = {
   // 🧾 LẤY TẤT CẢ PHÒNG
+  // 🧾 LẤY TẤT CẢ PHÒNG (Room Objects) mà userId là thành viên
   getAllRooms: async (req, res) => {
     try {
-      const { data: allRoom, error } = await supabase.from('rooms').select('*')
-      if (error) throw error
-      res.status(200).json(allRoom)
+      // 1. Lấy userId từ URL params
+      const { userId } = req.params
+
+      // 2. Truy vấn Supabase:
+      //    - Bắt đầu từ bảng 'room_members'
+      //    - Lọc các bản ghi có 'user_id' bằng với userId
+      //    - SỬ DỤNG 'select' ĐỂ JOIN VỚI BẢNG 'rooms'
+      //      Cú pháp: '*, rooms(*)' sẽ trả về tất cả cột của room_members VÀ tất cả cột của bảng rooms được liên kết.
+
+      const { data: roomMembers, error } = await supabase
+        .from('room_members')
+        .select('*, rooms(*)') // <--- Đã sửa ở đây: JOIN với bảng 'rooms'
+        .eq('user_id', userId)
+
+      if (error) {
+        // Đặt mã lỗi client là 400 nếu dữ liệu đầu vào không hợp lệ hoặc lỗi truy vấn cụ thể
+        return res
+          .status(400)
+          .json({
+            message: 'Lỗi truy vấn cơ sở dữ liệu',
+            details: error.message,
+          })
+      }
+
+      // 3. Chuẩn hóa kết quả: Chỉ lấy ra đối tượng phòng (Room Object)
+      //    Kết quả từ Supabase là mảng các đối tượng { user_id, room_id, rooms: { room_data... } }
+      //    Ta chỉ cần mảng các đối tượng { room_data... }
+      const allRooms = roomMembers.map((member) => member.rooms)
+
+      if (allRooms.length === 0) {
+        return res
+          .status(200)
+          .json({ message: 'Người dùng không tham gia phòng nào.', rooms: [] })
+      }
+
+      res.status(200).json(allRooms)
     } catch (err) {
-      res.status(500).json({ message: err.message })
+      // Xử lý các lỗi ngoài truy vấn (ví dụ: lỗi hệ thống)
+      console.error('Lỗi server khi lấy phòng:', err.message)
+      res
+        .status(500)
+        .json({ message: 'Lỗi server nội bộ', details: err.message })
     }
   },
-
   // 🔍 LẤY PHÒNG THEO ID (SỬA LỖI .select)
   // getUserRoom: trả về room info (tên, mô tả, mã, creator_name) và members
   getUserRoom: async (req, res) => {
