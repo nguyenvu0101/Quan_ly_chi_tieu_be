@@ -178,9 +178,10 @@ const roomController = {
         )
       }
 
-      const { data: recentExpenses } = await recentExpensesQuery
+      const { data: recentExpenses, error: recentErr } = await recentExpensesQuery
         .order('expense_date', { ascending: false })
-        .limit(5)
+
+      if (recentErr) throw recentErr
 
       // Lấy payer info
       const payerIds = [...new Set(recentExpenses?.map((e) => e.paid_by) || [])]
