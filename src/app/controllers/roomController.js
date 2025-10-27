@@ -390,7 +390,9 @@ const roomController = {
   deleteRoom: async (req, res) => {
     try {
       const { id } = req.params
-      const { error } = await supabase.from('rooms').delete().eq('id', id)
+      const roomId = req.query.roomId
+      console.log('🚪 Yêu cầu xoá phòng ID:', roomId, 'bởi user ID:', id)
+      const { error } = await supabase.from('rooms').delete().eq('id', roomId)
       if (error) throw error
       res.status(200).json('Room deleted')
     } catch (err) {
@@ -534,5 +536,31 @@ const roomController = {
       })
     }
   },
+  leaveRoom : async (req, res) => {
+    try {
+      const { roomId, userId } = req.body
+      const uid = getUserIdFromInput(userId)
+
+      const { data, error } = await supabase
+        .from('room_members')
+        .delete()
+        .eq('room_id', roomId)
+        .eq('user_id', uid)
+
+      if (error) throw error
+
+      return res.status(200).json({
+        success: true,
+        message: 'Rời phòng thành công.',
+      })
+    } catch (err) {
+      console.error('❌ Lỗi trong roomController.leaveRoom:', err)
+      return res.status(500).json({
+        success: false,
+        message: err.message || 'Lỗi server khi rời phòng.',
+      })
+    }
+  },
 }
-export default roomController
+
+export default roomController 

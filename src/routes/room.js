@@ -32,10 +32,16 @@ router.put(
     '/update/:id',
     roomController.updateRoom
 )
+// LEAVE ROOM
+router.delete(
+  '/leave',
+  roomController.leaveRoom
+)
 // DELETE ROOM
 router.delete(
-    '/delete/:id',
-    roomController.deleteRoom
+  '/delete/:id',
+  verifyTokenAndUserAuthorization,
+  roomController.deleteRoom
 )
 
 export default router
