@@ -327,6 +327,113 @@ const expenseController = {
       })
     }
   },
+  // Backend - expenseController.js hoặc routes
+
+  getExpenseDetail: async (req, res) => {
+    try {
+      const id = req.params.expense_id
+
+      console.log('📦 Fetching expense detail:', id)
+
+      if (!id) {
+        return res.status(400).json({
+          success: false,
+          message: 'expense_id is required',
+        })
+      }
+
+      const expenseId = parseInt(id, 10)
+      if (isNaN(expenseId)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid expense ID: ${id}`,
+        })
+      }
+
+      // 1. Lấy expense info
+      const { data: expense, error: expenseError } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('id', expenseId)
+        .maybeSingle()
+
+      if (expenseError) throw expenseError
+
+      if (!expense) {
+        return res.status(404).json({
+          success: false,
+          message: 'Expense not found',
+        })
+      }
+
+      // 2. Lấy payer info
+      const { data: payer } = await supabase
+        .from('users')
+        .select('id, user_name, full_name, avatar_url')
+        .eq('id', expense.paid_by)
+        .maybeSingle()
+
+      // 3. Lấy participants (expense_participants table)
+      const { data: expenseParticipants } = await supabase
+        .from('expense_participants')
+        .select('user_id, share_amount')
+        .eq('expense_id', expenseId)
+
+      // 4. Lấy user info của participants
+      const participantUserIds =
+        expenseParticipants?.map((p) => p.user_id) || []
+
+      const { data: participantUsers } = await supabase
+        .from('users')
+        .select('id, user_name, full_name, avatar_url')
+        .in('id', participantUserIds)
+
+      const userMap = {}
+      participantUsers?.forEach((u) => {
+        userMap[u.id] = u
+      })
+
+      // 5. Format participants
+      const participants = (expenseParticipants || []).map((p) => ({
+        user_id: p.user_id,
+        username: userMap[p.user_id]?.user_name,
+        full_name: userMap[p.user_id]?.full_name,
+        avatar_url: userMap[p.user_id]?.avatar_url,
+        share_amount: parseFloat(p.share_amount || 0),
+      }))
+
+      // 6. Format response
+      const expenseDetail = {
+        id: expense.id,
+        room_id: expense.room_id,
+        description: expense.description,
+        amount: parseFloat(expense.amount),
+        expense_date: expense.expense_date,
+        category: expense.category,
+        paid_by: expense.paid_by,
+        paid_by_name: payer?.full_name || payer?.user_name || 'Unknown',
+        paid_by_avatar: payer?.avatar_url,
+        split_type: expense.split_type,
+        created_at: expense.created_at,
+      }
+
+      console.log(
+        `✅ Expense detail fetched with ${participants.length} participants`
+      )
+
+      return res.status(200).json({
+        success: true,
+        expense: expenseDetail,
+        participants,
+      })
+    } catch (err) {
+      console.error('❌ Error in getExpenseDetail:', err)
+      return res.status(500).json({
+        success: false,
+        message: err.message || 'Error fetching expense detail',
+      })
+    }
+  },
 
   // 🗑️ XÓA EXPENSE
   deleteExpense: async (req, res) => {

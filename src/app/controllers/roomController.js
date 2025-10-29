@@ -113,9 +113,10 @@ const roomController = {
 
       const memberUserIds = roomMembers?.map((m) => m.user_id) || []
 
+      // ✅ THÊM avatar_url VÀ qr_url VÀO SELECT
       const { data: memberUsers } = await supabase
         .from('users')
-        .select('id, user_name, full_name, email')
+        .select('id, user_name, full_name, email, avatar_url, qr_url') // ✅ THÊM 2 FIELD
         .in('id', memberUserIds)
 
       const userMap = {}
@@ -123,6 +124,7 @@ const roomController = {
         userMap[u.id] = u
       })
 
+      // ✅ THÊM avatar_url VÀ qr_url VÀO MEMBERS RESPONSE
       const members = (roomMembers || []).map((m) => ({
         user_id: m.user_id,
         role: m.role,
@@ -130,6 +132,8 @@ const roomController = {
         username: userMap[m.user_id]?.user_name,
         full_name: userMap[m.user_id]?.full_name,
         email: userMap[m.user_id]?.email,
+        avatar_url: userMap[m.user_id]?.avatar_url, // ✅ THÊM
+        qr_url: userMap[m.user_id]?.qr_url, // ✅ THÊM
       }))
 
       // 4️⃣ Tính date range theo period
@@ -270,7 +274,7 @@ const roomController = {
           creator_name: creatorName,
           created_at: roomData.created_at,
         },
-        members,
+        members, // ✅ ĐÃ CÓ avatar_url VÀ qr_url
         expenses: formattedExpenses,
         expenses_summary: {
           total_expenses: allExpenses?.length || 0,
