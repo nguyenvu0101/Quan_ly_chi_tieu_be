@@ -32,11 +32,14 @@ router.put(
     '/update/:id',
     roomController.updateRoom
 )
+// REMOVE USER FROM ROOM
+router.delete('/removeUser', roomController.removeUserRoom)
 // LEAVE ROOM
 router.delete(
   '/leave',
   roomController.leaveRoom
 )
+
 // DELETE ROOM
 router.delete(
   '/delete/:id',

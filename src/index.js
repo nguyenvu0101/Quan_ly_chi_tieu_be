@@ -2,7 +2,6 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
-import bodyParser from 'body-parser'
 import morgan from 'morgan'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -22,7 +21,6 @@ app.use(express.urlencoded({ extended: true }))
 app.use(morgan('dev'))
 app.use(cors())
 app.use(cookieParser())
-app.use(bodyParser.json())
 app.use(express.static(path.join(__dirname, 'public')))
 
 route(app)

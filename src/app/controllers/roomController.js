@@ -32,12 +32,10 @@ const roomController = {
 
       if (error) {
         // Đặt mã lỗi client là 400 nếu dữ liệu đầu vào không hợp lệ hoặc lỗi truy vấn cụ thể
-        return res
-          .status(400)
-          .json({
-            message: 'Lỗi truy vấn cơ sở dữ liệu',
-            details: error.message,
-          })
+        return res.status(400).json({
+          message: 'Lỗi truy vấn cơ sở dữ liệu',
+          details: error.message,
+        })
       }
 
       // 3. Chuẩn hóa kết quả: Chỉ lấy ra đối tượng phòng (Room Object)
@@ -178,8 +176,8 @@ const roomController = {
         )
       }
 
-      const { data: recentExpenses, error: recentErr } = await recentExpensesQuery
-        .order('expense_date', { ascending: false })
+      const { data: recentExpenses, error: recentErr } =
+        await recentExpensesQuery.order('expense_date', { ascending: false })
 
       if (recentErr) throw recentErr
 
@@ -400,6 +398,7 @@ const roomController = {
       res.status(500).json({ message: err.message })
     }
   },
+
   // 🔍 KIỂM TRA MÃ PHÒNG (Dành cho Frontend Flutter)
   checkRoomCode: async (req, res) => {
     try {
@@ -537,7 +536,7 @@ const roomController = {
       })
     }
   },
-  leaveRoom : async (req, res) => {
+  leaveRoom: async (req, res) => {
     try {
       const { roomId, userId } = req.body
       const uid = getUserIdFromInput(userId)
@@ -559,6 +558,32 @@ const roomController = {
       return res.status(500).json({
         success: false,
         message: err.message || 'Lỗi server khi rời phòng.',
+      })
+    }
+  },
+  removeUserRoom: async (req, res) => {
+    try {
+      const { roomId, userId } = req.body
+      console.log('🚪 Yêu cầu xoá user ID:', userId, 'khỏi phòng ID:', roomId)
+      const uid = getUserIdFromInput(userId)
+
+      const { data, error } = await supabase
+        .from('room_members')
+        .delete()
+        .eq('room_id', roomId)
+        .eq('user_id', uid)
+
+      if (error) throw error
+
+      return res.status(200).json({
+        success: true,
+        message: 'Xóa thành viên thành công.',
+      })
+    } catch (err) {
+      console.error('❌ Lỗi trong roomController.removeUserRoom:', err)
+      return res.status(500).json({
+        success: false,
+        message: err.message || 'Lỗi server khi xóa thành viên.',
       })
     }
   },

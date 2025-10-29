@@ -1,0 +1,20 @@
+# fly.toml app configuration file generated for p405-be on 2025-10-29T15:07:18+07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'p405-be'
+primary_region = 'sin'
+
+[build]
+
+[http_service]
+  internal_port = 3003
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+[[vm]]
+  size = 'shared-cpu-1x'
