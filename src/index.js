@@ -30,6 +30,6 @@ route(app)
 // ✅ Gọi đúng hàm testDBConnection
 await testDBConnection()
 
-app.listen(port, () =>
-  console.log(`🚀 Server chạy tại: http://localhost:${port}`)
-)
+app.listen(port, '0.0.0.0', () => {
+  console.log(`🚀 Server đang chạy tại cổng ${port}`)
+})
