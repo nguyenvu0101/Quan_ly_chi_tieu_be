@@ -12,5 +12,7 @@ router.post('/login', authController.loginUser)
 router.post('/logout', verifyToken, authController.logOut)
 // REFRESH TOKEN
 router.post('/refresh', authController.requestRefreshToken)
-
+router.post('/forgot_password', authController.checkMail)
+router.post('/reset_password', authController.resetPassword)
+router.post('/verify_otp', authController.verifyOtp)
 export default router
