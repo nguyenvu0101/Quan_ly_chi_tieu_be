@@ -24,7 +24,9 @@ app.use(cookieParser())
 app.use(express.static(path.join(__dirname, 'public')))
 
 route(app)
-
+app.get('/health', (req, res) => {
+  res.status(200).send('OK')
+})
 // ✅ Gọi đúng hàm testDBConnection
 await testDBConnection()
 
