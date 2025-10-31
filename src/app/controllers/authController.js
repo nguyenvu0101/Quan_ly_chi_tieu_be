@@ -203,7 +203,7 @@ const authController = {
   checkMail: async (req, res) => {
     try {
       const { email } = req.body
-
+console.log('📧 Yêu cầu gửi OTP đến email:', email)
       // Kiểm tra user có tồn tại không
       const { data: user, error } = await supabase
         .from('users')

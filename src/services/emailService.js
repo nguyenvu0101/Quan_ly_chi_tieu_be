@@ -1,10 +1,18 @@
 import { TransactionalEmailsApi, SendSmtpEmail } from '@getbrevo/brevo'
 
-const apiInstance = new TransactionalEmailsApi()
-apiInstance.setApiKey(0, process.env.BREVO_API_KEY)
+console.log(
+  '🔑 BREVO_API_KEY loaded:',
+  process.env.BREVO_API_KEY ? '✅ Yes' : '❌ No'
+)
 
 export async function sendOTPEmail(email, userName, otp) {
   try {
+    // ✅ TẠO API INSTANCE MỚI MỖI LẦN GỌI
+    const apiInstance = new TransactionalEmailsApi()
+    apiInstance.setApiKey(0, process.env.BREVO_API_KEY)
+
+    console.log('📧 Sending OTP to:', email)
+
     const sendSmtpEmail = new SendSmtpEmail()
 
     sendSmtpEmail.subject = 'Mã OTP đặt lại mật khẩu'
@@ -45,11 +53,15 @@ export async function sendOTPEmail(email, userName, otp) {
       },
     ]
 
+    // ✅ GỌI API VÀ AWAIT KẾT QUẢ
     const data = await apiInstance.sendTransacEmail(sendSmtpEmail)
+
     console.log('✅ OTP email sent successfully to', email)
+    console.log('📤 Brevo response:', data)
+
     return data
   } catch (error) {
-    console.error('❌ Error sending OTP email:', error.message)
-    throw new Error('Failed to send OTP email')
+    console.error('❌ Error sending OTP email:', error)
+    throw new Error('Failed to send OTP email: ' + error.message)
   }
 }
