@@ -235,7 +235,7 @@ const authController = {
 
       if (otpError) throw otpError
 
-      // Gửi email (sử dụng Nodemailer hoặc SendGrid)
+      // Gửi email bằng Brevo
       await sendOTPEmail(email, user.full_name, otp)
 
       console.log(`✅ OTP sent to ${email}: ${otp}`)
@@ -253,6 +253,7 @@ const authController = {
       })
     }
   },
+
   verifyOtp: async (req, res) => {
     try {
       const { email, otp } = req.body
@@ -330,6 +331,7 @@ const authController = {
       })
     }
   },
+
   resetPassword: async (req, res) => {
     try {
       const { reset_token, new_password } = req.body
