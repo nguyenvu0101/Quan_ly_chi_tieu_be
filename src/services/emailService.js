@@ -42,8 +42,8 @@ export async function sendOTPEmail(email, userName, otp) {
     `
 
     sendSmtpEmail.sender = {
-      name: 'Expense Sharing App',
-      email: 'noreply@yourapp.com',
+      name: 'Quản Lý Chi Tiêu',
+      email: 'nguyenvanvu112003@gmail.com',
     }
 
     sendSmtpEmail.to = [
