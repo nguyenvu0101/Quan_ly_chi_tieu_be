@@ -593,4 +593,4 @@ const roomController = {
   },
 }
 
-export default roomController 
+export default roomController
