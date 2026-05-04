@@ -17,14 +17,27 @@ const userController = {
   getUser: async (req, res) => {
     try {
       const { id } = req.params
+      console.log('📍 getUser called with id:', id)
+
       const { data: user, error } = await supabase
         .from('users')
         .select('*')
         .eq('id', id)
         .single()
+
       if (error) throw error
+
+      console.log('✅ User data retrieved:')
+      console.log('   id:', user?.id)
+      console.log('   user_name:', user?.user_name)
+      console.log('   full_name:', user?.full_name)
+      console.log('   avatar_url:', user?.avatar_url || '(null)')
+      console.log('   qr_url:', user?.qr_url || '(null)')
+      console.log('   Response size: ' + JSON.stringify(user).length + ' bytes')
+
       res.status(200).json(user)
     } catch (err) {
+      console.error('❌ Error in getUser:', err.message)
       res.status(500).json({ message: err.message })
     }
   },
