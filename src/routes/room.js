@@ -25,6 +25,7 @@ router.get(
 // GET ROOM BY ID
 router.get(
     '/:id',
+    verifyToken,
     roomController.getUserRoom
 )
 // UPDATE ROOM

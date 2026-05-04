@@ -64,8 +64,9 @@ const roomController = {
     try {
       const { id } = req.params
       const { period } = req.query
+      const currentUserId = req.user?.id ? parseInt(req.user.id, 10) : null
 
-      console.log('📦 Fetching room:', id, 'period:', period)
+      console.log('📦 Fetching room:', id, 'period:', period, 'currentUser:', currentUserId)
 
       const roomId = parseInt(id, 10)
       if (isNaN(roomId)) {
@@ -113,10 +114,9 @@ const roomController = {
 
       const memberUserIds = roomMembers?.map((m) => m.user_id) || []
 
-      // ✅ THÊM avatar_url VÀ qr_url VÀO SELECT
       const { data: memberUsers } = await supabase
         .from('users')
-        .select('id, user_name, full_name, email, avatar_url, qr_url') // ✅ THÊM 2 FIELD
+        .select('id, user_name, full_name, email, avatar_url, qr_url')
         .in('id', memberUserIds)
 
       const userMap = {}
@@ -124,7 +124,6 @@ const roomController = {
         userMap[u.id] = u
       })
 
-      // ✅ THÊM avatar_url VÀ qr_url VÀO MEMBERS RESPONSE
       const members = (roomMembers || []).map((m) => ({
         user_id: m.user_id,
         role: m.role,
@@ -132,8 +131,8 @@ const roomController = {
         username: userMap[m.user_id]?.user_name,
         full_name: userMap[m.user_id]?.full_name,
         email: userMap[m.user_id]?.email,
-        avatar_url: userMap[m.user_id]?.avatar_url, // ✅ THÊM
-        qr_url: userMap[m.user_id]?.qr_url, // ✅ THÊM
+        avatar_url: userMap[m.user_id]?.avatar_url,
+        qr_url: userMap[m.user_id]?.qr_url,
       }))
 
       // 4️⃣ Tính date range theo period
@@ -167,26 +166,52 @@ const roomController = {
         }`
       )
 
-      // 5️⃣ Lấy expenses (5 gần nhất) với filter
-      let recentExpensesQuery = supabase
+      // 5️⃣ Lấy TẤT CẢ expenses của phòng (để tính total_amount)
+      let allExpensesQuery = supabase
         .from('expenses')
         .select('*')
         .eq('room_id', roomId)
 
       if (startDate) {
-        recentExpensesQuery = recentExpensesQuery.gte(
+        allExpensesQuery = allExpensesQuery.gte(
           'expense_date',
           startDate.toISOString().split('T')[0]
         )
       }
 
-      const { data: recentExpenses, error: recentErr } =
-        await recentExpensesQuery.order('expense_date', { ascending: false })
+      const { data: allExpensesRaw, error: allErr } = await allExpensesQuery
+      if (allErr) throw allErr
 
-      if (recentErr) throw recentErr
+      // 6️⃣ Lấy expense_participants để lọc theo user
+      let expenseParticipantQuery = supabase
+        .from('expense_participants')
+        .select('expense_id, user_id')
 
-      // Lấy payer info
-      const payerIds = [...new Set(recentExpenses?.map((e) => e.paid_by) || [])]
+      if (currentUserId) {
+        expenseParticipantQuery = expenseParticipantQuery.eq('user_id', currentUserId)
+      }
+
+      const { data: userParticipants } = await expenseParticipantQuery
+      const userParticipantExpenseIds = new Set(
+        (userParticipants || []).map((p) => parseInt(p.expense_id))
+      )
+
+      // 7️⃣ Lọc expenses: user là payer HOẶC là participant
+      const currentUserIdStr = currentUserId?.toString()
+      const myExpenseIds = new Set(
+        (allExpensesRaw || []).filter(
+          (e) =>
+            String(e.paid_by) === currentUserIdStr ||
+            userParticipantExpenseIds.has(parseInt(e.id))
+        ).map((e) => parseInt(e.id))
+      )
+
+      const filteredExpenses = (allExpensesRaw || []).filter(
+        (e) => myExpenseIds.has(parseInt(e.id))
+      )
+
+      // Lấy payer info cho filtered expenses
+      const payerIds = [...new Set(filteredExpenses?.map((e) => e.paid_by) || [])]
       const { data: payers } = await supabase
         .from('users')
         .select('id, user_name, full_name')
@@ -197,46 +222,42 @@ const roomController = {
         payerMap[p.id] = p
       })
 
-      const formattedExpenses = (recentExpenses || []).map((exp) => ({
-        id: exp.id,
+      const formattedExpenses = (filteredExpenses || []).map((exp) => ({
+        id: parseInt(exp.id),
         description: exp.description,
         amount: parseFloat(exp.amount),
         expense_date: exp.expense_date,
         category: exp.category,
-        paid_by: exp.paid_by,
+        paid_by: parseInt(exp.paid_by),
         paid_by_name:
-          payerMap[exp.paid_by]?.full_name ||
-          payerMap[exp.paid_by]?.user_name ||
+          payerMap[parseInt(exp.paid_by)]?.full_name ||
+          payerMap[parseInt(exp.paid_by)]?.user_name ||
           'Unknown',
         split_type: exp.split_type,
         created_at: exp.created_at,
+        is_payer: String(exp.paid_by) === currentUserIdStr,
       }))
 
-      // 6️⃣ TÍNH TỔNG CHI TIÊU (theo period)
-      let totalExpensesQuery = supabase
-        .from('expenses')
-        .select('amount')
-        .eq('room_id', roomId)
+      // 8️⃣ Tính total_amount tổng (tất cả expenses) cho stats
+      const totalAmount = (allExpensesRaw || []).reduce(
+        (sum, exp) => sum + parseFloat(exp.amount || 0),
+        0
+      )
 
-      if (startDate) {
-        totalExpensesQuery = totalExpensesQuery.gte(
-          'expense_date',
-          startDate.toISOString().split('T')[0]
-        )
-      }
-
-      const { data: allExpenses } = await totalExpensesQuery
-
-      const totalAmount = (allExpenses || []).reduce(
+      // 9️⃣ Tính my_total (chỉ expenses của user)
+      const myTotal = (filteredExpenses || []).reduce(
         (sum, exp) => sum + parseFloat(exp.amount || 0),
         0
       )
 
       console.log(
-        `💰 Total: ${allExpenses?.length || 0} expenses, ${totalAmount} amount`
+        `💰 Total: ${allExpensesRaw?.length || 0} expenses, ${totalAmount} amount`
+      )
+      console.log(
+        `🔒 Filtered: ${filteredExpenses?.length || 0} expenses for user ${currentUserId}, myTotal: ${myTotal}`
       )
 
-      // 7️⃣ Lấy balances (không filter)
+      // 🔟 Lấy balances (không filter)
       const { data: balances } = await supabase
         .from('balances')
         .select('creditor_id, debtor_id, amount')
@@ -274,11 +295,13 @@ const roomController = {
           creator_name: creatorName,
           created_at: roomData.created_at,
         },
-        members, // ✅ ĐÃ CÓ avatar_url VÀ qr_url
+        members,
         expenses: formattedExpenses,
         expenses_summary: {
-          total_expenses: allExpenses?.length || 0,
+          total_expenses: allExpensesRaw?.length || 0,
           total_amount: totalAmount,
+          my_total: myTotal,
+          my_count: filteredExpenses?.length || 0,
           period: period || 'all',
           start_date: startDate ? startDate.toISOString().split('T')[0] : null,
         },

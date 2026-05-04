@@ -258,12 +258,13 @@ const expenseController = {
     }
   },
 
-  // 📋 LẤY TẤT CẢ EXPENSES CỦA PHÒNG
+  // 📋 LẤY EXPENSES CỦA PHÒNG
   getExpenses: async (req, res) => {
     try {
       const { room_id } = req.params
+      const currentUserId = req.user?.id ? parseInt(req.user.id, 10) : null
 
-      console.log('📦 Fetching expenses for room:', room_id)
+      console.log('📦 Fetching expenses for room:', room_id, 'user:', currentUserId)
 
       if (!room_id) {
         return res.status(400).json({
@@ -272,10 +273,13 @@ const expenseController = {
         })
       }
 
+      const roomIdNum = parseInt(room_id, 10)
+
+      // Lấy tất cả expenses của phòng
       const { data: expenses, error } = await supabase
         .from('expenses')
         .select('*')
-        .eq('room_id', room_id)
+        .eq('room_id', roomIdNum)
         .order('expense_date', { ascending: false })
 
       if (error) {
@@ -283,9 +287,29 @@ const expenseController = {
         throw error
       }
 
-      // Lấy user info
-      const userIds = [...new Set(expenses?.map((e) => e.paid_by))]
+      // Lấy expense_participants của user hiện tại
+      let userParticipantExpenseIds = new Set()
+      if (currentUserId) {
+        const { data: userParticipants } = await supabase
+          .from('expense_participants')
+          .select('expense_id')
+          .eq('user_id', currentUserId)
 
+        userParticipantExpenseIds = new Set(
+          (userParticipants || []).map((p) => parseInt(p.expense_id))
+        )
+      }
+
+      // Lọc: chỉ lấy expense mà user là payer HOẶC là participant
+      const currentUserIdStr = currentUserId?.toString()
+      const filteredExpenses = (expenses || []).filter(
+        (e) =>
+          String(e.paid_by) === currentUserIdStr ||
+          userParticipantExpenseIds.has(parseInt(e.id))
+      )
+
+      // Lấy user info
+      const userIds = [...new Set(filteredExpenses?.map((e) => e.paid_by))]
       const { data: users } = await supabase
         .from('users')
         .select('id, user_name, full_name')
@@ -297,20 +321,20 @@ const expenseController = {
       })
 
       // Format expenses
-      const formattedExpenses = (expenses || []).map((exp) => ({
+      const formattedExpenses = (filteredExpenses || []).map((exp) => ({
         id: exp.id,
         room_id: exp.room_id,
         description: exp.description,
         amount: parseFloat(exp.amount),
         expense_date: exp.expense_date,
         category: exp.category,
-        paid_by: exp.paid_by,
-        split_type: exp.split_type,
+        paid_by: parseInt(exp.paid_by),
         payer_name:
-          userMap[exp.paid_by]?.full_name ||
-          userMap[exp.paid_by]?.user_name ||
+          userMap[parseInt(exp.paid_by)]?.full_name ||
+          userMap[parseInt(exp.paid_by)]?.user_name ||
           'Unknown',
         created_at: exp.created_at,
+        is_payer: String(exp.paid_by) === currentUserIdStr,
       }))
 
       console.log(`✅ Found ${formattedExpenses.length} expenses`)
