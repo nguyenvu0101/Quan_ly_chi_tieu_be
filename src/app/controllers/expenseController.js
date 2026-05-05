@@ -287,17 +287,19 @@ const expenseController = {
         throw error
       }
 
-      // Lấy expense_participants của user hiện tại
-      let userParticipantExpenseIds = new Set()
-      if (currentUserId) {
+      // Lấy expense_participants của user hiện tại (bao gồm share_amount)
+      let userExpenseShares = {} // expenseId -> share_amount
+      if (currentUserId && expenses?.length > 0) {
+        const expenseIds = (expenses || []).map((e) => e.id)
         const { data: userParticipants } = await supabase
           .from('expense_participants')
-          .select('expense_id')
+          .select('expense_id, share_amount')
           .eq('user_id', currentUserId)
+          .in('expense_id', expenseIds)
 
-        userParticipantExpenseIds = new Set(
-          (userParticipants || []).map((p) => parseInt(p.expense_id))
-        )
+        ;(userParticipants || []).forEach((p) => {
+          userExpenseShares[parseInt(p.expense_id)] = parseFloat(p.share_amount) || 0
+        })
       }
 
       // Lọc: chỉ lấy expense mà user là payer HOẶC là participant
@@ -305,7 +307,7 @@ const expenseController = {
       const filteredExpenses = (expenses || []).filter(
         (e) =>
           String(e.paid_by) === currentUserIdStr ||
-          userParticipantExpenseIds.has(parseInt(e.id))
+          userExpenseShares.hasOwnProperty(parseInt(e.id))
       )
 
       // Lấy user info
@@ -335,6 +337,7 @@ const expenseController = {
           'Unknown',
         created_at: exp.created_at,
         is_payer: String(exp.paid_by) === currentUserIdStr,
+        share_amount: userExpenseShares[parseInt(exp.id)] || 0,
       }))
 
       console.log(`✅ Found ${formattedExpenses.length} expenses`)

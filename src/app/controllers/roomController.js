@@ -182,33 +182,32 @@ const roomController = {
       const { data: allExpensesRaw, error: allErr } = await allExpensesQuery
       if (allErr) throw allErr
 
-      // 6️⃣ Lấy expense_participants để lọc theo user
-      let expenseParticipantQuery = supabase
-        .from('expense_participants')
-        .select('expense_id, user_id')
+      // 6️⃣ Lấy expense_participants của user để lọc và tính share
+      const myExpenseIds = new Set()
+      const userShareMap = {} // expenseId -> share_amount
 
-      if (currentUserId) {
-        expenseParticipantQuery = expenseParticipantQuery.eq('user_id', currentUserId)
+      if (currentUserId && allExpensesRaw?.length > 0) {
+        const allExpenseIds = (allExpensesRaw || []).map((e) => parseInt(e.id))
+
+        const { data: allMyParticipants } = await supabase
+          .from('expense_participants')
+          .select('expense_id, share_amount')
+          .eq('user_id', currentUserId)
+          .in('expense_id', allExpenseIds)
+
+        ;(allMyParticipants || []).forEach((p) => {
+          const expId = parseInt(p.expense_id)
+          userShareMap[expId] = parseFloat(p.share_amount) || 0
+          myExpenseIds.add(expId)
+        })
       }
-
-      const { data: userParticipants } = await expenseParticipantQuery
-      const userParticipantExpenseIds = new Set(
-        (userParticipants || []).map((p) => parseInt(p.expense_id))
-      )
 
       // 7️⃣ Lọc expenses: user là payer HOẶC là participant
       const currentUserIdStr = currentUserId?.toString()
-      const myExpenseIds = new Set(
-        (allExpensesRaw || []).filter(
-          (e) =>
-            String(e.paid_by) === currentUserIdStr ||
-            userParticipantExpenseIds.has(parseInt(e.id))
-        ).map((e) => parseInt(e.id))
-      )
-
-      const filteredExpenses = (allExpensesRaw || []).filter(
-        (e) => myExpenseIds.has(parseInt(e.id))
-      )
+      const filteredExpenses = (allExpensesRaw || []).filter((e) => {
+        const expId = parseInt(e.id)
+        return String(e.paid_by) === currentUserIdStr || myExpenseIds.has(expId)
+      })
 
       // Lấy payer info cho filtered expenses
       const payerIds = [...new Set(filteredExpenses?.map((e) => e.paid_by) || [])]
@@ -244,11 +243,11 @@ const roomController = {
         0
       )
 
-      // 9️⃣ Tính my_total (chỉ expenses của user)
-      const myTotal = (filteredExpenses || []).reduce(
-        (sum, exp) => sum + parseFloat(exp.amount || 0),
-        0
-      )
+      // 9️⃣ Tính my_total = tổng share_amount của user trong filtered expenses
+      const myTotal = filteredExpenses.reduce((sum, exp) => {
+        const expId = parseInt(exp.id)
+        return sum + (userShareMap[expId] || 0)
+      }, 0)
 
       console.log(
         `💰 Total: ${allExpensesRaw?.length || 0} expenses, ${totalAmount} amount`
