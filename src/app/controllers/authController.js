@@ -91,7 +91,7 @@ const authController = {
     jwt.sign(
       { id: user.id, isAdmin: user.is_admin },
       process.env.JWT_REFRESH_KEY,
-      { expiresIn: '365d' }
+      { expiresIn: '30d' }
     ),
 
   // 🔑 ĐĂNG NHẬP
@@ -137,7 +137,6 @@ const authController = {
       // Nếu OK thì tạo token
       const accessToken = authController.generateAccessToken(user)
       const refreshToken = authController.generateRefreshToken(user)
-      refreshTokens.push(refreshToken)
 
       res.cookie('refreshToken', refreshToken, {
         httpOnly: true,
@@ -162,18 +161,14 @@ const authController = {
 
   // 🔁 LẤY LẠI TOKEN
   requestRefreshToken: async (req, res) => {
-    const refreshToken = req.cookies.refreshToken
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken
     if (!refreshToken) return res.status(401).json('Chưa đăng nhập')
-    if (!refreshTokens.includes(refreshToken))
-      return res.status(403).json('Refresh token không hợp lệ')
 
     jwt.verify(refreshToken, process.env.JWT_REFRESH_KEY, (err, user) => {
-      if (err) return res.status(403).json('Token lỗi')
+      if (err) return res.status(403).json('Refresh token lỗi hoặc đã hết hạn')
 
-      refreshTokens = refreshTokens.filter((t) => t !== refreshToken)
       const newAccessToken = authController.generateAccessToken(user)
       const newRefreshToken = authController.generateRefreshToken(user)
-      refreshTokens.push(newRefreshToken)
 
       res.cookie('refreshToken', newRefreshToken, {
         httpOnly: true,
@@ -190,15 +185,8 @@ const authController = {
 
   // 🚪 ĐĂNG XUẤT
   logOut: async (req, res) => {
-    // ⚠️ Chú ý: Cần lấy token từ cookie thay vì req.body
-    const tokenToFilter = req.cookies.refreshToken
-    if (tokenToFilter) {
-      refreshTokens = refreshTokens.filter((token) => token !== tokenToFilter)
-      res.clearCookie('refreshToken')
-      res.status(200).json('Đăng xuất thành công!')
-    } else {
-      res.status(400).json('Không tìm thấy refresh token trong cookie.')
-    }
+    res.clearCookie('refreshToken')
+    res.status(200).json('Đăng xuất thành công!')
   },
   checkMail: async (req, res) => {
     try {

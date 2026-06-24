@@ -66,7 +66,14 @@ const roomController = {
       const { period } = req.query
       const currentUserId = req.user?.id ? parseInt(req.user.id, 10) : null
 
-      console.log('📦 Fetching room:', id, 'period:', period, 'currentUser:', currentUserId)
+      console.log(
+        '📦 Fetching room:',
+        id,
+        'period:',
+        period,
+        'currentUser:',
+        currentUserId
+      )
 
       const roomId = parseInt(id, 10)
       if (isNaN(roomId)) {
@@ -210,7 +217,9 @@ const roomController = {
       })
 
       // Lấy payer info cho filtered expenses
-      const payerIds = [...new Set(filteredExpenses?.map((e) => e.paid_by) || [])]
+      const payerIds = [
+        ...new Set(filteredExpenses?.map((e) => e.paid_by) || []),
+      ]
       const { data: payers } = await supabase
         .from('users')
         .select('id, user_name, full_name')
@@ -221,21 +230,67 @@ const roomController = {
         payerMap[p.id] = p
       })
 
-      const formattedExpenses = (filteredExpenses || []).map((exp) => ({
-        id: parseInt(exp.id),
-        description: exp.description,
-        amount: parseFloat(exp.amount),
-        expense_date: exp.expense_date,
-        category: exp.category,
-        paid_by: parseInt(exp.paid_by),
-        paid_by_name:
-          payerMap[parseInt(exp.paid_by)]?.full_name ||
-          payerMap[parseInt(exp.paid_by)]?.user_name ||
-          'Unknown',
-        split_type: exp.split_type,
-        created_at: exp.created_at,
-        is_payer: String(exp.paid_by) === currentUserIdStr,
-      }))
+      // Fetch participants for all filtered expenses in one go
+      const expenseIds = (filteredExpenses || []).map((e) => parseInt(e.id))
+      const expenseParticipantsMap = {}
+
+      if (expenseIds.length > 0) {
+        const { data: allParticipants, error: partErr } = await supabase
+          .from('expense_participants')
+          .select('expense_id, user_id, share_amount')
+          .in('expense_id', expenseIds)
+
+        if (partErr) throw partErr
+
+        const participantUserIds = [...new Set(allParticipants?.map((p) => p.user_id) || [])]
+        const { data: participantUsers, error: userErr } = await supabase
+          .from('users')
+          .select('id, user_name, full_name, avatar_url')
+          .in('id', participantUserIds)
+
+        if (userErr) throw userErr
+
+        const partUserMap = {}
+        participantUsers?.forEach((u) => {
+          partUserMap[u.id] = u
+        })
+
+        allParticipants?.forEach((p) => {
+          const expId = parseInt(p.expense_id)
+          if (!expenseParticipantsMap[expId]) {
+            expenseParticipantsMap[expId] = []
+          }
+          expenseParticipantsMap[expId].push({
+            user_id: p.user_id,
+            username: partUserMap[p.user_id]?.user_name,
+            full_name: partUserMap[p.user_id]?.full_name,
+            avatar_url: partUserMap[p.user_id]?.avatar_url,
+            share_amount: parseFloat(p.share_amount || 0),
+          })
+        })
+      }
+
+      const formattedExpenses = (filteredExpenses || []).map((exp) => {
+        const expId = parseInt(exp.id)
+        const participants = expenseParticipantsMap[expId] || []
+        return {
+          id: expId,
+          description: exp.description,
+          amount: parseFloat(exp.amount),
+          expense_date: exp.expense_date,
+          category: exp.category,
+          paid_by: parseInt(exp.paid_by),
+          paid_by_name:
+            payerMap[parseInt(exp.paid_by)]?.full_name ||
+            payerMap[parseInt(exp.paid_by)]?.user_name ||
+            'Unknown',
+          split_type: exp.split_type,
+          created_at: exp.created_at,
+          is_payer: String(exp.paid_by) === currentUserIdStr,
+          participants,
+          participant_ids: participants.map((p) => p.user_id),
+        }
+      })
 
       // 8️⃣ Tính total_amount tổng (tất cả expenses) cho stats
       const totalAmount = (allExpensesRaw || []).reduce(
@@ -417,6 +472,23 @@ const roomController = {
       const { id } = req.params
       const roomId = req.query.roomId
       console.log('🚪 Yêu cầu xoá phòng ID:', roomId, 'bởi user ID:', id)
+
+      // 🛡️ Kiểm tra xem phòng có còn bất kỳ khoản nợ nào chưa thanh toán không
+      const { data: activeBalances, error: balanceErr } = await supabase
+        .from('balances')
+        .select('*')
+        .eq('room_id', roomId)
+        .gt('amount', 0.01)
+
+      if (balanceErr) throw balanceErr
+
+      if (activeBalances && activeBalances.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể xóa phòng khi vẫn còn các khoản nợ chưa thanh toán giữa các thành viên.',
+        })
+      }
+
       const { error } = await supabase.from('rooms').delete().eq('id', roomId)
       if (error) throw error
       res.status(200).json('Room deleted')
@@ -566,6 +638,23 @@ const roomController = {
     try {
       const { roomId, userId } = req.body
       const uid = getUserIdFromInput(userId)
+
+      // 🛡️ Kiểm tra xem thành viên này có nợ chưa thanh toán không
+      const { data: activeBalances, error: balanceErr } = await supabase
+        .from('balances')
+        .select('*')
+        .eq('room_id', roomId)
+        .or(`creditor_id.eq.${uid},debtor_id.eq.${uid}`)
+        .gt('amount', 0.01)
+
+      if (balanceErr) throw balanceErr
+
+      if (activeBalances && activeBalances.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Bạn không thể rời phòng khi vẫn còn các khoản nợ chưa thanh toán.',
+        })
+      }
 
       const { data, error } = await supabase
         .from('room_members')

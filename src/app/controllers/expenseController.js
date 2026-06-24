@@ -476,11 +476,19 @@ const expenseController = {
         })
       }
 
+      const expenseId = parseInt(id, 10)
+      if (isNaN(expenseId)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid expense ID: ${id}`,
+        })
+      }
+
       // 1. Lấy expense
       const { data: expense, error: getError } = await supabase
         .from('expenses')
         .select('*')
-        .eq('id', id)
+        .eq('id', expenseId)
         .maybeSingle()
 
       if (getError) {
@@ -499,9 +507,12 @@ const expenseController = {
       const { data: participants, error: participantsError } = await supabase
         .from('expense_participants')
         .select('*')
-        .eq('expense_id', id)
+        .eq('expense_id', expenseId)
 
-      if (participantsError) throw participantsError
+      if (participantsError) {
+        console.error('❌ Error fetching participants:', participantsError)
+        throw participantsError
+      }
 
       // 3. Rollback balances
       for (const participant of participants || []) {
@@ -510,7 +521,10 @@ const expenseController = {
 
         if (participantUserId === paidBy) continue
 
-        const { data: balance } = await supabase
+        const shareAmount = parseFloat(participant.share_amount)
+
+        // Lấy balance theo hướng thuận: paidBy (creditor) -> participantUserId (debtor)
+        const { data: balanceDir1, error: errorDir1 } = await supabase
           .from('balances')
           .select('*')
           .eq('room_id', expense.room_id)
@@ -518,39 +532,130 @@ const expenseController = {
           .eq('debtor_id', participantUserId)
           .maybeSingle()
 
-        if (balance) {
-          const shareAmount = parseFloat(participant.share_amount)
-          const currentAmount = parseFloat(balance.amount)
+        if (errorDir1) {
+          console.error('❌ Error fetching balance Dir1:', errorDir1)
+          throw errorDir1
+        }
+
+        // Lấy balance theo hướng ngược: participantUserId (creditor) -> paidBy (debtor)
+        const { data: balanceDir2, error: errorDir2 } = await supabase
+          .from('balances')
+          .select('*')
+          .eq('room_id', expense.room_id)
+          .eq('creditor_id', participantUserId)
+          .eq('debtor_id', paidBy)
+          .maybeSingle()
+
+        if (errorDir2) {
+          console.error('❌ Error fetching balance Dir2:', errorDir2)
+          throw errorDir2
+        }
+
+        if (balanceDir1) {
+          // TH1: Tồn tại nợ theo hướng thuận
+          const currentAmount = parseFloat(balanceDir1.amount)
           const newAmount = currentAmount - shareAmount
 
-          if (newAmount <= 0.01) {
-            await supabase.from('balances').delete().eq('id', balance.id)
-            console.log('🗑️ Balance deleted')
-          } else {
-            await supabase
+          if (newAmount > 0.01) {
+            const { error: updateError } = await supabase
               .from('balances')
               .update({
                 amount: newAmount,
                 updated_at: new Date().toISOString(),
               })
-              .eq('id', balance.id)
-            console.log(`✏️ Balance updated to ${newAmount}`)
-          }
+              .eq('id', balanceDir1.id)
 
-          // Simplify after rollback
-          await simplifyBalanceBetweenTwo(
-            expense.room_id,
-            paidBy,
-            participantUserId
-          )
+            if (updateError) throw updateError
+            console.log(`✏️ Balance updated: ${participantUserId} owes ${paidBy} ${newAmount}`)
+          } else if (newAmount < -0.01) {
+            // Số nợ bị âm, đảo chiều nợ
+            const { error: deleteError } = await supabase
+              .from('balances')
+              .delete()
+              .eq('id', balanceDir1.id)
+
+            if (deleteError) throw deleteError
+
+            const { error: insertError } = await supabase
+              .from('balances')
+              .insert({
+                room_id: expense.room_id,
+                creditor_id: participantUserId,
+                debtor_id: paidBy,
+                amount: Math.abs(newAmount),
+              })
+
+            if (insertError) throw insertError
+            console.log(`🔄 Balance reversed: ${paidBy} now owes ${participantUserId} ${Math.abs(newAmount)}`)
+          } else {
+            // newAmount bằng 0
+            const { error: deleteError } = await supabase
+              .from('balances')
+              .delete()
+              .eq('id', balanceDir1.id)
+
+            if (deleteError) throw deleteError
+            console.log('🗑️ Balance deleted (new amount is 0)')
+          }
+        } else if (balanceDir2) {
+          // TH2: Tồn tại nợ theo hướng ngược lại -> tăng tiền nợ của hướng ngược lên
+          const currentAmount = parseFloat(balanceDir2.amount)
+          const newAmount = currentAmount + shareAmount
+
+          const { error: updateError } = await supabase
+            .from('balances')
+            .update({
+              amount: newAmount,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', balanceDir2.id)
+
+          if (updateError) throw updateError
+          console.log(`✏️ Balance opposite updated: ${paidBy} now owes ${participantUserId} ${newAmount}`)
+        } else {
+          // TH3: Chưa tồn tại nợ giữa hai người -> tạo nợ mới theo hướng ngược lại
+          const { error: insertError } = await supabase
+            .from('balances')
+            .insert({
+              room_id: expense.room_id,
+              creditor_id: participantUserId,
+              debtor_id: paidBy,
+              amount: shareAmount,
+            })
+
+          if (insertError) throw insertError
+          console.log(`➕ Created new balance: ${paidBy} now owes ${participantUserId} ${shareAmount}`)
         }
+
+        // Đơn giản hóa lại số nợ (để đảm bảo tính nhất quán nếu có)
+        await simplifyBalanceBetweenTwo(
+          expense.room_id,
+          paidBy,
+          participantUserId
+        )
       }
 
       // 4. Xóa participants
-      await supabase.from('expense_participants').delete().eq('expense_id', id)
+      const { error: deletePartsError } = await supabase
+        .from('expense_participants')
+        .delete()
+        .eq('expense_id', expenseId)
+
+      if (deletePartsError) {
+        console.error('❌ Error deleting participants:', deletePartsError)
+        throw deletePartsError
+      }
 
       // 5. Xóa expense
-      await supabase.from('expenses').delete().eq('id', id)
+      const { error: deleteExpenseError } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', expenseId)
+
+      if (deleteExpenseError) {
+        console.error('❌ Error deleting expense:', deleteExpenseError)
+        throw deleteExpenseError
+      }
 
       console.log('✅ Expense deleted successfully')
 

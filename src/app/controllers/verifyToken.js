@@ -9,7 +9,7 @@ export const verifyToken = (req, res, next) => {
     const token = authHeader.split(' ')[1]
     jwt.verify(token, process.env.JWT_ACCESS_KEY, (err, user) => {
       if (err) {
-        return res.status(403).json('Token không hợp lệ!')
+        return res.status(401).json('Token không hợp lệ hoặc đã hết hạn!')
       }
       req.user = user
       next()
