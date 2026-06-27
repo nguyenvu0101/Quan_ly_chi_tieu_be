@@ -46,7 +46,7 @@ const roomController = {
       if (allRooms.length === 0) {
         return res
           .status(200)
-          .json({ message: 'Người dùng không tham gia phòng nào.', rooms: [] })
+          .json([])
       }
 
       res.status(200).json(allRooms)
